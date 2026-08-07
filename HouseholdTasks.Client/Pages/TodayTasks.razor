@@ -1,0 +1,80 @@
+@page "/"
+@attribute [AllowAnonymous]
+@inject HttpClient Http
+@implements IDisposable
+
+<h1>Dagens gjøremål — @DateTime.Now.ToString("dddd, MMMM d")</h1>
+
+@if (_tasks is null)
+{
+    <p>Laster…</p>
+}
+else if (_tasks.Count == 0)
+{
+    <p>Ingenting på agendaen i dag. 🎉</p>
+}
+else
+{
+    <div class="today-board">
+        @foreach (var task in _tasks)
+        {
+            <div class="task-card @(task.IsCompleted ? "utført" : "") @(task.IsOverdue ? "utløpt/glemt" : "")">
+                <div>
+                    <span class="category-pill">@task.Category</span>
+                    @if (task.IsOverdue)
+                    {
+                        <span class="overdue-label">IKKE GJORT — skulle vært utført innen @task.DueDate.ToString("MMM d")</span>
+                    }
+                    <div class="title">@task.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(task.Description))
+                    {
+                        <div class="meta">@task.Description</div>
+                    }
+                    <div class="meta">
+                        Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                            ? string.Join(", ", task.AssignedFamilyMemberNames)
+                            : "Ikke tildelt")
+                    </div>
+                </div>
+                <div>
+                    @if (task.IsCompleted)
+                    {
+                        <span>✅ Utført@(task.CompletedByName is not null ? $" ({task.CompletedByName})" : "")</span>
+                    }
+                    else
+                    {
+                        <span>⬜ Venter</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<p class="meta" style="margin-top:2rem;">Oppdateres hvert 60. sekund.</p>
+
+@code {
+    private List<HouseholdTaskDto>? _tasks;
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _timer = new Timer(async _ => await InvokeAsync(LoadAsync), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _tasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>("api/tasks/today");
+            StateHasChanged();
+        }
+        catch
+        {
+            // keep showing the last successfully loaded data on transient failure
+        }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

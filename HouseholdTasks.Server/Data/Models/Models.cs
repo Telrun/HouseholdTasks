@@ -1,0 +1,43 @@
+using HouseholdTasks.Shared.Dtos;
+
+namespace HouseholdTasks.Server.Data.Models;
+
+public class FamilyMember
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public bool IsAdmin { get; set; }
+
+    public List<TaskAssignment> Assignments { get; set; } = new();
+}
+
+public class HouseholdTask
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public TaskCategory Category { get; set; }
+    public DateOnly DueDate { get; set; }
+    public RecurrenceType Recurrence { get; set; }
+
+    public bool IsCompleted { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public int? CompletedByMemberId { get; set; }
+    public FamilyMember? CompletedByMember { get; set; }
+
+    public int CreatedByMemberId { get; set; }
+
+    public List<TaskAssignment> Assignments { get; set; } = new();
+}
+
+public class TaskAssignment
+{
+    public int Id { get; set; }
+
+    public int HouseholdTaskId { get; set; }
+    public HouseholdTask HouseholdTask { get; set; } = null!;
+
+    public int FamilyMemberId { get; set; }
+    public FamilyMember FamilyMember { get; set; } = null!;
+}

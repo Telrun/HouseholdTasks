@@ -1,0 +1,80 @@
+@page "/admin"
+@attribute [Authorize(Policy = "AdminOnly")]
+@inject HttpClient Http
+
+<h1>Admin — Task Overview</h1>
+
+<label>Date</label>
+<input type="date" value="@_selectedDate.ToString("yyyy-MM-dd")" @onchange="OnDateChanged" style="max-width:220px;" />
+
+@if (_tasks is null)
+{
+    <p>Laster…</p>
+}
+else if (_tasks.Count == 0)
+{
+    <p>Ingen oppgaver i dag...</p>
+}
+else
+{
+    <div style="margin-top:1rem;">
+        @foreach (var task in _tasks)
+        {
+            <div class="task-card @(task.IsCompleted ? "ferdig" : "")">
+                <div>
+                    <span class="category-pill">@task.Category</span>
+                    <div class="title">@task.Title</div>
+                    <div class="meta">
+                        Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                            ? string.Join(", ", task.AssignedFamilyMemberNames)
+                            : "Ikke tildelt")
+                    </div>
+                    @if (task.IsCompleted)
+                    {
+                        <div class="meta">Utført av @task.CompletedByName</div>
+                    }
+                </div>
+                <div style="display:flex;gap:0.5rem;">
+                    @if (task.IsCompleted)
+                    {
+                        <button class="btn-secondary" @onclick="() => ResetAsync(task.Id)">Reset</button>
+                    }
+                    <button class="btn-danger" @onclick="() => DeleteAsync(task.Id)">Delete</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Now);
+    private List<HouseholdTaskDto>? _tasks;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _tasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>($"api/tasks?date={_selectedDate:yyyy-MM-dd}");
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse((string?)e.Value, out var parsed))
+        {
+            _selectedDate = parsed;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ResetAsync(int taskId)
+    {
+        await Http.PostAsync($"api/tasks/{taskId}/reset", null);
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(int taskId)
+    {
+        await Http.DeleteAsync($"api/tasks/{taskId}");
+        await LoadAsync();
+    }
+}

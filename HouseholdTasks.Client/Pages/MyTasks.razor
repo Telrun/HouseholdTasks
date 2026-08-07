@@ -1,0 +1,166 @@
+@page "/my-tasks"
+@attribute [Authorize]
+@inject HttpClient Http
+
+<h1>My Tasks</h1>
+
+<label for="datePicker">Dato</label>
+<input id="datePicker" type="date" value="@_selectedDate.ToString("yyyy-MM-dd")" @onchange="OnDateChanged" style="max-width:220px;" />
+<button class="btn-secondary" style="margin-left:0.5rem;" @onclick="GoToToday">I dag</button>
+
+@if (_tasks is null)
+{
+    <p>laster…</p>
+}
+else if (_tasks.Count == 0)
+{
+    <p>Du har ingen oppgaver i dag.</p>
+}
+else
+{
+    <div style="margin-top:1rem;">
+        @foreach (var task in _tasks)
+        {
+            <div class="task-card @(task.IsCompleted ? "utført" : "")">
+                <div>
+                    <span class="category-pill">@task.Category</span>
+                    <div class="title">@task.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(task.Description))
+                    {
+                        <div class="meta">@task.Description</div>
+                    }
+                    <div class="meta">With: @string.Join(", ", task.AssignedFamilyMemberNames)</div>
+                    @if (task.Recurrence != RecurrenceType.None)
+                    {
+                        <div class="meta">🔁 Repeats @task.Recurrence.ToString().ToLower()</div>
+                    }
+                </div>
+                <div>
+                    @if (task.IsCompleted)
+                    {
+                        <span>✅ Ferdig</span>
+                    }
+                    else
+                    {
+                        <button class="btn-primary" @onclick="() => CompleteAsync(task.Id)">Marker som utført</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<hr style="margin:2rem 0;" />
+
+<button class="btn-secondary" @onclick="() => _showAddTaskForm = !_showAddTaskForm">
+    @(_showAddTaskForm ? "▾" : "▸") Legg til en oppgave
+</button>
+
+@if (_showAddTaskForm)
+{
+    <div style="margin-top:1rem;">
+        <EditForm Model="_newTask" OnValidSubmit="AddTaskAsync">
+            <label>Tittel</label>
+            <input @bind="_newTask.Title" />
+
+            <label>Beskrivelse</label>
+            <textarea @bind="_newTask.Description"></textarea>
+
+            <label>Kategori</label>
+            <select @bind="_newTask.Category">
+                @foreach (var cat in Enum.GetValues<TaskCategory>())
+                {
+                    <option value="@cat">@cat</option>
+                }
+            </select>
+
+            <label>Utføres innen</label>
+            <input type="date" value="@_newTask.DueDate.ToString("yyyy-MM-dd")"
+                   @onchange="e => _newTask.DueDate = DateOnly.Parse((string)e.Value!)" />
+
+            <label>Gjentas</label>
+            <select @bind="_newTask.Recurrence">
+                <option value="@RecurrenceType.None">Gjentas ikke</option>
+                <option value="@RecurrenceType.Daily">Daglig</option>
+                <option value="@RecurrenceType.Weekly">Ukentlig</option>
+                <option value="@RecurrenceType.Monthly">Månedlig</option>
+            </select>
+
+            <label>Oppgave tildelt</label>
+            @if (_familyMembers is not null)
+            {
+                @foreach (var member in _familyMembers)
+                {
+                    <label style="font-weight:normal;">
+                        <input type="checkbox" style="width:auto;display:inline;"
+                               checked="@_newTask.AssignedFamilyMemberIds.Contains(member.Id)"
+                               @onchange="e => ToggleAssignee(member.Id, (bool)e.Value!)" />
+                        @member.Name
+                    </label>
+                }
+            }
+
+            <button type="submit" class="btn-primary" style="margin-top:1rem;">Legg til oppgave</button>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Now);
+    private List<HouseholdTaskDto>? _tasks;
+    private List<FamilyMemberDto>? _familyMembers;
+    private CreateHouseholdTaskDto _newTask = new() { DueDate = DateOnly.FromDateTime(DateTime.Now) };
+    private bool _showAddTaskForm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _familyMembers = await Http.GetFromJsonAsync<List<FamilyMemberDto>>("api/family-members");
+        await LoadTasksAsync();
+    }
+
+    private async Task LoadTasksAsync()
+    {
+        _tasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>(
+            $"api/tasks?date={_selectedDate:yyyy-MM-dd}&mine=true");
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse((string?)e.Value, out var parsed))
+        {
+            _selectedDate = parsed;
+            await LoadTasksAsync();
+        }
+    }
+
+    private async Task GoToToday()
+    {
+        _selectedDate = DateOnly.FromDateTime(DateTime.Now);
+        await LoadTasksAsync();
+    }
+
+    private async Task CompleteAsync(int taskId)
+    {
+        await Http.PostAsync($"api/tasks/{taskId}/complete", null);
+        await LoadTasksAsync();
+    }
+
+    private void ToggleAssignee(int memberId, bool isChecked)
+    {
+        if (isChecked && !_newTask.AssignedFamilyMemberIds.Contains(memberId))
+            _newTask.AssignedFamilyMemberIds.Add(memberId);
+        else if (!isChecked)
+            _newTask.AssignedFamilyMemberIds.Remove(memberId);
+    }
+
+    private async Task AddTaskAsync()
+    {
+        var response = await Http.PostAsJsonAsync("api/tasks", _newTask);
+        if (response.IsSuccessStatusCode)
+        {
+            _newTask = new CreateHouseholdTaskDto { DueDate = _selectedDate };
+            _showAddTaskForm = false;
+            await LoadTasksAsync();
+        }
+    }
+}

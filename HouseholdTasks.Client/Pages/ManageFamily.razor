@@ -1,0 +1,97 @@
+@page "/family"
+@attribute [Authorize]
+@inject HttpClient Http
+@inject AuthenticationStateProvider AuthProvider
+
+<h1>Familiemedlemmer</h1>
+
+@if (_members is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div>
+        @foreach (var member in _members)
+        {
+            <div class="task-card">
+                <div>
+                    <div class="title">@member.Name @(member.IsAdmin ? "⭐" : "")</div>
+                    <div class="meta">@member.Email</div>
+                </div>
+                @if (_isAdmin)
+                {
+                    <button class="btn-danger" @onclick="() => DeleteAsync(member.Id)">Fjern</button>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (_isAdmin)
+{
+    <hr style="margin:2rem 0;" />
+    <h2>Register a family member</h2>
+    <p class="meta">
+        Legg til epostadresse som man vil logge seg inn med (Google account). Google kontoen vil bli linket første gang man logger seg inn.
+    </p>
+    <EditForm Model="_newMember" OnValidSubmit="AddAsync">
+        <label>Navn</label>
+        <input @bind="_newMember.Name" />
+
+        <label>Epost (Google konto)</label>
+        <input @bind="_newMember.Email" type="email" />
+
+        <label style="font-weight:normal;">
+            <input type="checkbox" style="width:auto;display:inline;" @bind="_newMember.IsAdmin" />
+            Administrator
+        </label>
+
+        <button type="submit" class="btn-primary" style="margin-top:1rem;">Legg til familiemedlem</button>
+    </EditForm>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p style="color:var(--danger);">@_error</p>
+    }
+}
+
+@code {
+    private List<FamilyMemberDto>? _members;
+    private CreateFamilyMemberDto _newMember = new();
+    private bool _isAdmin;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _isAdmin = authState.User.IsInRole("Admin");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _members = await Http.GetFromJsonAsync<List<FamilyMemberDto>>("api/family-members");
+    }
+
+    private async Task AddAsync()
+    {
+        _error = null;
+        var response = await Http.PostAsJsonAsync("api/family-members", _newMember);
+        if (response.IsSuccessStatusCode)
+        {
+            _newMember = new CreateFamilyMemberDto();
+            await LoadAsync();
+        }
+        else
+        {
+            _error = await response.Content.ReadAsStringAsync();
+        }
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await Http.DeleteAsync($"api/family-members/{id}");
+        await LoadAsync();
+    }
+}
