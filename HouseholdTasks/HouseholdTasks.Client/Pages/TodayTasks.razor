@@ -1,0 +1,88 @@
+@page "/"
+@attribute [AllowAnonymous]
+@inject HttpClient Http
+@implements IDisposable
+
+<h1>Today's Tasks — @DateTime.Now.ToString("dddd, MMMM d")</h1>
+
+@if (_tasks is null)
+{
+    <p>Loading…</p>
+}
+else if (_tasks.Count == 0)
+{
+    <p>Nothing scheduled for today. 🎉</p>
+}
+else
+{
+    <div class="today-board">
+        @foreach (var task in _tasks)
+        {
+            <div class="task-card @(task.IsCompleted ? "completed" : "") @(task.IsOverdue ? "overdue" : "")">
+                <div>
+                    <span class="category-pill">@task.Category</span>
+                    @if (task.IsOverdue)
+                    {
+                        <span class="overdue-label">OVERDUE — was due @task.DueDate.ToString("MMM d")</span>
+                    }
+                    <div class="title">@task.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(task.Description))
+                    {
+                        <div class="meta">@task.Description</div>
+                    }
+                    <div class="meta">
+                        @if (task.IsRotating)
+                        {
+                            <text>Responsible: @string.Join(", ", task.ActiveAssigneeNames)</text>
+                            <span style="margin-left:0.5rem;">🔁 rotates: @string.Join(" → ", task.AssignedFamilyMemberNames)</span>
+                        }
+                        else
+                        {
+                            <text>Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                                ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                : "Unassigned")</text>
+                        }
+                    </div>
+                </div>
+                <div>
+                    @if (task.IsCompleted)
+                    {
+                        <span>✅ Done@(task.CompletedByName is not null ? $" ({task.CompletedByName})" : "")</span>
+                    }
+                    else
+                    {
+                        <span>⬜ Pending</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<p class="meta" style="margin-top:2rem;">This screen refreshes automatically every 60 seconds.</p>
+
+@code {
+    private List<HouseholdTaskDto>? _tasks;
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _timer = new Timer(async _ => await InvokeAsync(LoadAsync), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _tasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>("api/tasks/today");
+            StateHasChanged();
+        }
+        catch
+        {
+            // keep showing the last successfully loaded data on transient failure
+        }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}
