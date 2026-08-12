@@ -12,7 +12,7 @@ boot: auto
 
 init: false
 
-image: ghcr.io/Telrun/HouseholdTasks
+image: ghcr.io/telrun/householdtasks
 
 ingress: true
 ingress_port: 8080
