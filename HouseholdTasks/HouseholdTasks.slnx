@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="HouseholdTasks.Server/HouseholdTasks.Server.csproj" />
-  <Project Path="HouseholdTasks.Client/HouseholdTasks.Client.csproj" />
-  <Project Path="HouseholdTasks.Shared/HouseholdTasks.Shared.csproj" />
-</Solution>

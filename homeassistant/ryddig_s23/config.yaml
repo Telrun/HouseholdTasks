@@ -1,0 +1,23 @@
+name: Ryddig S23
+version: "1.0.0"
+slug: ryddig_s23
+description: Ryddig Sagmesterveien 23
+
+arch:
+  - aarch64
+  - amd64
+
+startup: application
+boot: auto
+
+init: false
+
+image: ghcr.io/Telrun/HouseholdTasks
+
+ingress: true
+ingress_port: 8080
+
+panel_icon: mdi:web
+panel_title: Ryddig S23
+
+stage: experimental
