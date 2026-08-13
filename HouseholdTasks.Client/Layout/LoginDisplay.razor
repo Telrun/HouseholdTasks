@@ -11,27 +11,35 @@
                 <span> (admin)</span>
             }
         </span>
-        <button class="btn-secondary" @onclick="LogOut">Logg ut</button>
+
+        <button class="btn-secondary" @onclick="LogOut">
+            Logg ut
+        </button>
     </Authorized>
+
     <NotAuthorized>
-        <button class="btn btn-secondary" @onclick="SignIn">Logg inn med Google</button>
+        <button class="btn btn-secondary" @onclick="SignIn">
+            Logg inn med Google
+        </button>
     </NotAuthorized>
 </AuthorizeView>
 
 @code {
-    private string LoginUrl => $"api/account/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}";
+    private string LoginUrl =>
+        $"{Nav.BaseUri}api/account/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}";
 
-    // A plain <a href> here gets intercepted by Blazor's client-side router (it tries to
-    // resolve "api/account/login" as a SPA route and shows "nothing at this address"
-    // instead of letting the browser make a real request). forceLoad: true bypasses the
-    // router and does an actual full-page navigation, so the request reaches the server,
-    // which issues the Google OAuth challenge redirect.
-    private void SignIn() => Nav.NavigateTo(LoginUrl, forceLoad: true);
+    private void SignIn()
+    {
+        Nav.NavigateTo(LoginUrl, forceLoad: true);
+    }
 
     private async Task LogOut()
     {
         await Http.PostAsync("api/account/logout", null);
-        ((CookieAuthenticationStateProvider)AuthProvider).NotifyUserChanged();
-        Nav.NavigateTo("/", forceLoad: true);
+
+        ((CookieAuthenticationStateProvider)AuthProvider)
+            .NotifyUserChanged();
+
+        Nav.NavigateTo(Nav.BaseUri, forceLoad: true);
     }
 }

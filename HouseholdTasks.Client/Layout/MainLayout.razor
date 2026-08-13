@@ -1,13 +1,20 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Nav
 
 <header class="app-header">
-    <a href="/">🏠 Familien Tellefsens oppgaver</a>
+    <a href="@Nav.BaseUri">🏠 Familien Tellefsens oppgaver</a>
+
+    <div style="font-size:10px;">
+        BaseUri: @Nav.BaseUri<br />
+        Uri: @Nav.Uri
+    </div>
     <nav>
-        <a href="/">Dagens liste</a>
-        <a href="/my-tasks">Mine oppgaver</a>
-        <a href="/family">Familien</a>
-        <a href="/admin">Admin</a>
+        <a href="@Nav.BaseUri">Dagens liste</a>
+        <a href="@($"{Nav.BaseUri}my-tasks")">Mine oppgaver</a>
+        <a href="@($"{Nav.BaseUri}family")">Familien</a>
+        <a href="@($"{Nav.BaseUri}admin")">Admin</a>
     </nav>
+
     <LoginDisplay />
 </header>
 
