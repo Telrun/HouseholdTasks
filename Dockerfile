@@ -13,7 +13,7 @@ RUN dotnet publish "HouseholdTasks.Server/HouseholdTasks.Server.csproj" \
     --no-restore
 
 
-# Runtime stage
+# Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 
 WORKDIR /app

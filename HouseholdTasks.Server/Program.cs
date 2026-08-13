@@ -8,7 +8,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
-
+if (File.Exists("/data/options.json"))
+{
+    builder.Configuration.AddJsonFile(
+        "/data/options.json",
+        optional: true,
+        reloadOnChange: false);
+}
 // ---- Database (SQLite) ----
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
@@ -39,8 +45,18 @@ builder.Services.AddAuthentication(options =>
     })
     .AddGoogle(options =>
     {
-        options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
-        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
+        options.ClientId =
+            builder.Configuration["Authentication:Google:ClientId"]
+            ?? builder.Configuration["google_client_id"]
+            ?? throw new InvalidOperationException(
+                "Google Client ID is not configured.");
+
+        options.ClientSecret =
+            builder.Configuration["Authentication:Google:ClientSecret"]
+            ?? builder.Configuration["google_client_secret"]
+            ?? throw new InvalidOperationException(
+                "Google Client Secret is not configured.");
+
         options.SaveTokens = false;
     });
 
