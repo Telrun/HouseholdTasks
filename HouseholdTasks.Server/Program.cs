@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 if (File.Exists("/data/options.json"))
@@ -46,14 +47,14 @@ builder.Services.AddAuthentication(options =>
     .AddGoogle(options =>
     {
         options.ClientId =
-            builder.Configuration["Authentication:Google:ClientId"]
-            ?? builder.Configuration["google_client_id"]
+            builder.Configuration["google_client_id"]
+            ?? builder.Configuration["Authentication:Google:ClientId"]
             ?? throw new InvalidOperationException(
                 "Google Client ID is not configured.");
 
         options.ClientSecret =
-            builder.Configuration["Authentication:Google:ClientSecret"]
-            ?? builder.Configuration["google_client_secret"]
+            builder.Configuration["google_client_secret"]
+            ?? builder.Configuration["Authentication:Google:ClientSecret"]
             ?? throw new InvalidOperationException(
                 "Google Client Secret is not configured.");
 
@@ -67,7 +68,19 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddScoped<IClaimsTransformation, FamilyMemberClaimsTransformer>();
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto;
+
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 // ---- Ensure DB exists ----
 using (var scope = app.Services.CreateScope())
