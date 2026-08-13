@@ -58,6 +58,7 @@ builder.Services.AddAuthentication(options =>
             ?? throw new InvalidOperationException(
                 "Google Client Secret is not configured.");
 
+        options.CallbackPath = "/signin-google";
         options.SaveTokens = false;
     });
 
@@ -104,6 +105,17 @@ app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/signin-google")
+    {
+        Console.WriteLine(
+            $"GOOGLE CALLBACK: {context.Request.Scheme}://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}");
+    }
+
+    await next();
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
