@@ -45,4 +45,4 @@ jobs:
           push: true
           tags: |
             ghcr.io/telrun/householdtasks:latest
-            ghcr.io/telrun/householdtasks:1.0.4
+            ghcr.io/telrun/householdtasks:1.0.5
