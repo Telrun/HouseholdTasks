@@ -60,6 +60,18 @@ builder.Services.AddAuthentication(options =>
 
         options.CallbackPath = "/signin-google";
         options.SaveTokens = false;
+
+        options.Events.OnRemoteFailure = context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("GoogleAuth");
+            logger.LogError(context.Failure, "Google sign-in failed.");
+
+            context.Response.Redirect("/?loginError=" + Uri.EscapeDataString(context.Failure?.Message ?? "unknown"));
+            context.HandleResponse();
+            return Task.CompletedTask;
+        };
     });
 
 builder.Services.AddAuthorization(options =>
@@ -123,6 +135,14 @@ app.UseAuthorization();
 app.MapAccountEndpoints();
 app.MapFamilyEndpoints();
 app.MapTaskEndpoints();
+
+app.MapGet("/Error", (HttpContext ctx) =>
+{
+    var feature = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+    var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("UnhandledException");
+    logger.LogError(feature?.Error, "Unhandled exception.");
+    return Results.Problem("Something went wrong. Check the server logs for details.");
+}).AllowAnonymous();
 
 app.MapFallbackToFile("index.html");
 
