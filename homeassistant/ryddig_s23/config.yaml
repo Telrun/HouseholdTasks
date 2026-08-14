@@ -1,5 +1,5 @@
 name: Ryddig S23
-version: "1.0.8"
+version: "1.0.9"
 slug: ryddig_s23
 description: Ryddig Sagmesterveien 23
 
@@ -17,6 +17,11 @@ ingress_port: 8080
 
 panel_icon: mdi:web
 panel_title: Ryddig S23
+
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: "Web UI (direct access, needed for Google sign-in)"
 
 stage: experimental
 
