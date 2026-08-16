@@ -48,6 +48,7 @@ public class HouseholdTaskDto
     public string? Description { get; set; }
     public TaskCategory Category { get; set; }
     public DateOnly DueDate { get; set; }
+    public TimeOnly DueTime { get; set; } = new(23, 59);
     public bool IsCompleted { get; set; }
     public bool IsOverdue { get; set; }
     public RecurrenceType Recurrence { get; set; }
@@ -63,6 +64,7 @@ public class CreateHouseholdTaskDto
     public string? Description { get; set; }
     public TaskCategory Category { get; set; }
     public DateOnly DueDate { get; set; }
+    public TimeOnly DueTime { get; set; } = new(23, 59);
     public RecurrenceType Recurrence { get; set; }
     public List<int> AssignedFamilyMemberIds { get; set; } = new();
 }

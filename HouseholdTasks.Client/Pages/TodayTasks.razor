@@ -18,12 +18,12 @@ else
     <div class="today-board">
         @foreach (var task in _tasks)
         {
-            <div class="task-card @(task.IsCompleted ? "utført" : "") @(task.IsOverdue ? "utløpt/glemt" : "")">
+            <div class="task-card @(task.IsCompleted ? "completed" : "") @(task.IsOverdue ? "overdue" : "")">
                 <div>
                     <span class="category-pill">@task.Category</span>
                     @if (task.IsOverdue)
                     {
-                        <span class="overdue-label">IKKE GJORT — skulle vært utført innen @task.DueDate.ToString("MMM d")</span>
+                        <span class="overdue-label">IKKE GJORT — skulle vært utført innen @task.DueDate.ToString("MMM d") kl. @task.DueTime.ToString("HH:mm")</span>
                     }
                     <div class="title">@task.Title</div>
                     @if (!string.IsNullOrWhiteSpace(task.Description))
@@ -35,6 +35,10 @@ else
                             ? string.Join(", ", task.AssignedFamilyMemberNames)
                             : "Ikke tildelt")
                     </div>
+                    @if (!task.IsOverdue && task.DueTime != new TimeOnly(23, 59))
+                    {
+                        <div class="meta">⏰ Frist: kl. @task.DueTime.ToString("HH:mm")</div>
+                    }
                 </div>
                 <div>
                     @if (task.IsCompleted)
@@ -53,8 +57,55 @@ else
 
 <p class="meta" style="margin-top:2rem;">Oppdateres hvert 60. sekund.</p>
 
+<hr style="margin:1.5rem 0;" />
+
+<button class="btn-secondary" @onclick="ToggleTomorrow">
+    @(_showTomorrow ? "▾" : "▸") Vis morgendagens oppgaver
+</button>
+
+@if (_showTomorrow)
+{
+    <div style="margin-top:1rem;">
+        @if (_tomorrowTasks is null)
+        {
+            <p>Laster…</p>
+        }
+        else if (_tomorrowTasks.Count == 0)
+        {
+            <p>Ingenting planlagt i morgen ennå.</p>
+        }
+        else
+        {
+            @foreach (var task in _tomorrowTasks)
+            {
+                <div class="task-card">
+                    <div>
+                        <span class="category-pill">@task.Category</span>
+                        <div class="title">@task.Title</div>
+                        @if (!string.IsNullOrWhiteSpace(task.Description))
+                        {
+                            <div class="meta">@task.Description</div>
+                        }
+                        <div class="meta">
+                            Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                                ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                : "Ikke tildelt")
+                        </div>
+                        @if (task.DueTime != new TimeOnly(23, 59))
+                        {
+                            <div class="meta">⏰ Frist: kl. @task.DueTime.ToString("HH:mm")</div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
 @code {
     private List<HouseholdTaskDto>? _tasks;
+    private List<HouseholdTaskDto>? _tomorrowTasks;
+    private bool _showTomorrow;
     private Timer? _timer;
 
     protected override async Task OnInitializedAsync()
@@ -73,6 +124,16 @@ else
         catch
         {
             // keep showing the last successfully loaded data on transient failure
+        }
+    }
+
+    private async Task ToggleTomorrow()
+    {
+        _showTomorrow = !_showTomorrow;
+        if (_showTomorrow && _tomorrowTasks is null)
+        {
+            var tomorrow = DateOnly.FromDateTime(DateTime.Now.AddDays(1));
+            _tomorrowTasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>($"api/tasks/date/{tomorrow:yyyy-MM-dd}");
         }
     }
 

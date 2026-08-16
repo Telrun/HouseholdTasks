@@ -19,15 +19,26 @@ three projects:
 
 ## Features implemented
 
-- **Today's Tasks** (`/`) — public, no login, auto-refreshes every 60s. Meant for a
-  living-room screen/tablet in kiosk mode.
+- **Today's Tasks** (`/`) — public, no login, auto-refreshes every 60s. Includes a
+  collapsible "show tomorrow's tasks" toggle (read-only preview, exact date match, no
+  overdue-merging).
+- **Kiosk** (`/kiosk`) — a compact, dark, no-chrome variant of Today's Tasks meant to be
+  embedded in a Home Assistant dashboard on a small screen (e.g. a 7" Raspberry Pi
+  panel). No menu, no login prompt, no interaction — just a dense auto-refreshing list.
 - **My Tasks** (`/my-tasks`) — requires Google sign-in. Date picker (defaults to today),
   shows tasks assigned to the signed-in person, lets them mark tasks done, and includes a
   form to add new tasks and assign them to one or more family members.
+- **Due date and time** — every task has a due date and a due time (defaulting to 23:59,
+  i.e. end of day, unless changed). A task becomes "overdue" either the day after its due
+  date, or the same day once the due time has passed — whichever comes first.
 - **Family** (`/family`) — view family members; admins can register new members by name +
   email (the account links automatically the first time that email signs in with Google).
-- **Admin** (`/admin`, admins only) — see all tasks for any date, reset a task that was
-  marked done incorrectly, or delete a task.
+- **Admin** (`/admin`, admins only) — see all tasks for any date, edit a task's title,
+  description, category, due date/time, recurrence, or assignees, reset a task that was
+  marked done incorrectly, or delete a task. Also lists all family members with the same
+  kind of inline edit for name and admin status.
+- **Mobile-friendly** — responsive layout with a hamburger menu below ~768px width;
+  no Bootstrap, just hand-rolled CSS to match the rest of the app.
 
 ## Before you run it
 
@@ -82,11 +93,17 @@ dotnet user-secrets set "Authentication:Google:ClientSecret" "YOUR_CLIENT_SECRET
 ### 4. Set the initial administrator(s)
 
 Edit `HouseholdTasks.Server/appsettings.json` → `InitialAdminEmails` and list the Google
-email address(es) that should become admin automatically on first sign-in. Everyone else
-who signs in with a Google account is auto-registered as a regular (non-admin) family
-member the first time they log in — an admin can promote them later, or you can register
-people ahead of time on the **Family** page so their name is already set before they log
-in for the first time.
+email address(es) that should become admin automatically on first sign-in — this is the
+**only** way in that gets a FamilyMember row created automatically.
+
+**Sign-in is access-gated, not open.** Anyone who signs in with Google but whose email
+isn't already a registered family member (and isn't in `InitialAdminEmails`) is rejected
+during the Google callback itself — no cookie is ever issued, and they're bounced back to
+the app with an "Access denied" banner. This means you need to register a family member's
+email on the **Family** or **Admin** page *before* they can sign in for the first time —
+there's no self-service signup. Anyone in `InitialAdminEmails` is the one exception: their
+FamilyMember row (as an admin) is created automatically the first time they log in, since
+that's the only way to get the very first admin into an otherwise-empty database.
 
 ## Running
 
@@ -106,12 +123,19 @@ dotnet run
 
 The SQLite database file (`household.db`) is created automatically next to the Server
 project on first run (via `EnsureCreated()` — no manual migration step needed for a fresh
-install). **If you already had a database from before recurrence support was added**,
-delete `household.db` (and its `-shm`/`-wal` files if present) so it gets recreated with
-the new `Recurrence` column — `EnsureCreated()` only creates the schema once and won't
-alter an existing database, so an old file will throw a SQL error on the new column.
+install). **If you already had a database from before recurrence or due-time support was
+added**, delete `household.db` (and its `-shm`/`-wal` files if present) so it gets
+recreated with the newer `Recurrence`/`DueTime` columns — `EnsureCreated()` only creates
+the schema once and won't alter an existing database, so an old file will throw a SQL
+error on the missing columns.
 
 ## Notes & things you'll likely want to extend
+
+- **Embedding the kiosk page in Home Assistant**: since `/kiosk` requires no login, it
+  works fine through ingress or your direct hostname either way — add a "Webpage" card
+  (or an iframe in a manual dashboard) pointing at `https://<your-domain>/kiosk`. On a
+  7" panel you'll likely want to hide the HA header/sidebar around it too (kiosk-mode
+  card or a dedicated dashboard) so it's the only thing on screen.
 
 - **The living-room "Today" screen** is a public, read-only, unauthenticated page by
   design (per the requirements) — don't put anything on it you wouldn't want visible to

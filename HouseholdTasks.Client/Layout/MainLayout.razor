@@ -2,22 +2,60 @@
 @inject NavigationManager Nav
 
 <header class="app-header">
-    <a href="@Nav.BaseUri">🏠 Familien Tellefsens oppgaver</a>
+    <a class="app-logo" href="@Nav.BaseUri">🏠 Familien Tellefsens oppgaver</a>
 
-    <div style="font-size:10px;">
-        BaseUri: @Nav.BaseUri<br />
-        Uri: @Nav.Uri
+    <button class="hamburger-btn" @onclick="ToggleMenu" aria-label="Meny">
+        @(_menuOpen ? "✕" : "☰")
+    </button>
+
+    <div class="app-header-right @(_menuOpen ? "open" : "")">
+        <nav @onclick="CloseMenu">
+            <a href="@Nav.BaseUri">Dagens liste</a>
+            <a href="@($"{Nav.BaseUri}my-tasks")">Mine oppgaver</a>
+            <a href="@($"{Nav.BaseUri}family")">Familien</a>
+            <a href="@($"{Nav.BaseUri}admin")">Admin</a>
+        </nav>
+
+        <LoginDisplay />
     </div>
-    <nav>
-        <a href="@Nav.BaseUri">Dagens liste</a>
-        <a href="@($"{Nav.BaseUri}my-tasks")">Mine oppgaver</a>
-        <a href="@($"{Nav.BaseUri}family")">Familien</a>
-        <a href="@($"{Nav.BaseUri}admin")">Admin</a>
-    </nav>
-
-    <LoginDisplay />
 </header>
+
+@if (_showAccessDenied)
+{
+    <div class="access-denied-banner">
+        <span>
+            🚫 Tilgang nektet. Din Google-konto er ikke registrert som familiemedlem.
+            Be en administrator legge deg til under «Familien».
+        </span>
+        <button class="btn-secondary" @onclick="DismissBanner">✕</button>
+    </div>
+}
 
 <main>
     @Body
 </main>
+
+@code {
+    private bool _menuOpen;
+    private bool _showAccessDenied;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Nav.Uri);
+        var hasAccessDenied = uri.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Any(kv => kv == "accessDenied=true");
+
+        if (hasAccessDenied)
+        {
+            _showAccessDenied = true;
+
+            // Strip the query param so a refresh doesn't keep re-showing the banner.
+            Nav.NavigateTo(uri.GetLeftPart(UriPartial.Path), replace: true);
+        }
+    }
+
+    private void ToggleMenu() => _menuOpen = !_menuOpen;
+    private void CloseMenu() => _menuOpen = false;
+    private void DismissBanner() => _showAccessDenied = false;
+}

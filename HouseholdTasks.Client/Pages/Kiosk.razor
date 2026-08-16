@@ -1,0 +1,76 @@
+@page "/kiosk"
+@attribute [AllowAnonymous]
+@layout EmptyLayout
+@inject HttpClient Http
+@implements IDisposable
+
+<style>
+    html, body { margin: 0; padding: 0; background: #111; }
+</style>
+
+<div class="kiosk">
+    <div class="kiosk-header">
+        <span class="kiosk-date">@DateTime.Now.ToString("dddd d. MMMM")</span>
+        @if (_tasks is not null)
+        {
+            <span class="kiosk-count">@_remainingCount gjenstår</span>
+        }
+    </div>
+
+    @if (_tasks is null)
+    {
+        <p class="kiosk-empty">Laster…</p>
+    }
+    else if (_tasks.Count == 0)
+    {
+        <p class="kiosk-empty">Ingenting i dag 🎉</p>
+    }
+    else
+    {
+        <div class="kiosk-list">
+            @foreach (var task in _tasks)
+            {
+                <div class="kiosk-row @(task.IsCompleted ? "kiosk-completed" : "") @(task.IsOverdue ? "kiosk-overdue" : "")">
+                    <span class="kiosk-status">@(task.IsCompleted ? "✅" : task.IsOverdue ? "⚠️" : "⬜")</span>
+                    <span class="kiosk-title">@task.Title</span>
+                    @if (task.DueTime != new TimeOnly(23, 59))
+                    {
+                        <span class="kiosk-time">@task.DueTime.ToString("HH:mm")</span>
+                    }
+                    <span class="kiosk-who">
+                        @(task.AssignedFamilyMemberNames.Count > 0
+                            ? string.Join(", ", task.AssignedFamilyMemberNames)
+                            : "—")
+                    </span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<HouseholdTaskDto>? _tasks;
+    private Timer? _timer;
+    private int _remainingCount => _tasks?.Count(t => !t.IsCompleted) ?? 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _timer = new Timer(async _ => await InvokeAsync(LoadAsync), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _tasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>("api/tasks/today");
+            StateHasChanged();
+        }
+        catch
+        {
+            // keep showing the last successfully loaded data on transient failure
+        }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

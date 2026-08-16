@@ -1,0 +1,95 @@
+.kiosk {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #111;
+    color: #f2f2f2;
+    min-height: 100vh;
+    padding: 1rem 1.25rem;
+    box-sizing: border-box;
+}
+
+.kiosk-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 2px solid #333;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.kiosk-date {
+    font-size: 1.4rem;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.kiosk-count {
+    font-size: 1rem;
+    color: #aaa;
+}
+
+.kiosk-empty {
+    font-size: 1.3rem;
+    color: #999;
+    text-align: center;
+    margin-top: 2rem;
+}
+
+.kiosk-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.kiosk-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: #1c1c1c;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 1.05rem;
+    line-height: 1.25;
+}
+
+.kiosk-status {
+    font-size: 1.2rem;
+    text-align: center;
+    flex: 0 0 1.75rem;
+}
+
+.kiosk-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kiosk-time {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #ffb300;
+    white-space: nowrap;
+}
+
+.kiosk-who {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    color: #aaa;
+    white-space: nowrap;
+}
+
+.kiosk-row.kiosk-completed {
+    opacity: 0.45;
+}
+
+.kiosk-row.kiosk-completed .kiosk-title {
+    text-decoration: line-through;
+}
+
+.kiosk-row.kiosk-overdue {
+    background: #3a1e1e;
+    border: 1px solid #a33;
+}

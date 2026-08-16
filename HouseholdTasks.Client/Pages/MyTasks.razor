@@ -21,7 +21,7 @@ else
     <div style="margin-top:1rem;">
         @foreach (var task in _tasks)
         {
-            <div class="task-card @(task.IsCompleted ? "utført" : "")">
+            <div class="task-card @(task.IsCompleted ? "completed" : "")">
                 <div>
                     <span class="category-pill">@task.Category</span>
                     <div class="title">@task.Title</div>
@@ -30,6 +30,10 @@ else
                         <div class="meta">@task.Description</div>
                     }
                     <div class="meta">With: @string.Join(", ", task.AssignedFamilyMemberNames)</div>
+                    @if (task.DueTime != new TimeOnly(23, 59))
+                    {
+                        <div class="meta">⏰ Frist: kl. @task.DueTime.ToString("HH:mm")</div>
+                    }
                     @if (task.Recurrence != RecurrenceType.None)
                     {
                         <div class="meta">🔁 Repeats @task.Recurrence.ToString().ToLower()</div>
@@ -75,8 +79,13 @@ else
             </select>
 
             <label>Utføres innen</label>
-            <input type="date" value="@_newTask.DueDate.ToString("yyyy-MM-dd")"
-                   @onchange="e => _newTask.DueDate = DateOnly.Parse((string)e.Value!)" />
+            <div style="display:flex;gap:0.5rem;">
+                <input type="date" value="@_newTask.DueDate.ToString("yyyy-MM-dd")"
+                       @onchange="e => _newTask.DueDate = DateOnly.Parse((string)e.Value!)" />
+                <input type="time" value="@_newTask.DueTime.ToString("HH:mm")"
+                       @onchange="e => _newTask.DueTime = TimeOnly.Parse((string)e.Value!)"
+                       style="max-width:130px;" />
+            </div>
 
             <label>Gjentas</label>
             <select @bind="_newTask.Recurrence">

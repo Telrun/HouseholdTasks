@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
-using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 if (File.Exists("/data/options.json"))
