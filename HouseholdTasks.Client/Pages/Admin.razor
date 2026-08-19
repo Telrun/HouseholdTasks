@@ -69,6 +69,21 @@ else
                             }
                         }
 
+                        @if (_editTask.Recurrence != RecurrenceType.None && _editTask.AssignedFamilyMemberIds.Count > 1)
+                        {
+                            <label>Delingsmåte</label>
+                            <select @bind="_editTask.AssignmentMode">
+                                <option value="@TaskAssignmentMode.Shared">Alle deler oppgaven (hvem som helst kan gjøre den)</option>
+                                <option value="@TaskAssignmentMode.Rotating">Rundgang (bytter person for hver runde)</option>
+                            </select>
+                            @if (_editTask.AssignmentMode == TaskAssignmentMode.Rotating)
+                            {
+                                <p class="meta">
+                                    Lagring med rundgang starter alltid rotasjonen på nytt fra første person i listen over.
+                                </p>
+                            }
+                        }
+
                         <div style="display:flex;gap:0.5rem;margin-top:1rem;">
                             <button type="submit" class="btn-primary">Lagre</button>
                             <button type="button" class="btn-secondary" @onclick="CancelEditTask">Avbryt</button>
@@ -87,9 +102,17 @@ else
                             <div class="meta">@task.Description</div>
                         }
                         <div class="meta">
-                            Tildelt: @(task.AssignedFamilyMemberNames.Count > 0
-                                ? string.Join(", ", task.AssignedFamilyMemberNames)
-                                : "Ikke tildelt")
+                            @if (task.IsRotating)
+                            {
+                                <text>Ansvarlig nå: @string.Join(", ", task.ActiveAssigneeNames)</text>
+                                <span style="margin-left:0.5rem;">🔁 rundgang: @string.Join(" → ", task.AssignedFamilyMemberNames)</span>
+                            }
+                            else
+                            {
+                                <text>Tildelt: @(task.AssignedFamilyMemberNames.Count > 0
+                                    ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                    : "Ikke tildelt")</text>
+                            }
                         </div>
                         @if (task.IsCompleted)
                         {
@@ -223,6 +246,7 @@ else
             DueDate = task.DueDate,
             DueTime = task.DueTime,
             Recurrence = task.Recurrence,
+            AssignmentMode = task.AssignmentMode,
             AssignedFamilyMemberIds = new List<int>(task.AssignedFamilyMemberIds)
         };
     }

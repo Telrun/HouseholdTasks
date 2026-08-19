@@ -25,6 +25,7 @@
       updates its own dependency (tracked at dotnet/efcore#38257).
     -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <PackageReference Include="FirebaseAdmin" Version="3.6.0" />
   </ItemGroup>
 
   <ItemGroup>

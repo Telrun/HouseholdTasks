@@ -6,6 +6,17 @@
     <title>Household Tasks</title>
     <base href="./" />
     <link rel="stylesheet" href="css/app.css" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#3a6b35" />
+
+    <!-- iOS: without these, "Add to Home Screen" behaves like a plain bookmark, not an
+         installed app — which also means push notifications will never work on iPhone. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Husoppgaver" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
 </head>
 <body>
     <div id="app">
@@ -17,6 +28,13 @@
         <a href="" class="reload">Reload</a>
         <a class="dismiss">🗙</a>
     </div>
+
+    <!-- Firebase (compat build — simplest to call from Blazor's JS interop without
+         wrestling with ES module imports). Version pinned; bump if Firebase deprecates it. -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+    <script src="js/notifications.js"></script>
+
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 </html>

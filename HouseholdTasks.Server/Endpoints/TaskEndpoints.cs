@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using HouseholdTasks.Server.Data;
 using HouseholdTasks.Server.Data.Models;
+using HouseholdTasks.Server.Services;
 using HouseholdTasks.Shared.Dtos;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,7 +32,8 @@ public static class TaskEndpoints
 
         var group = app.MapGroup("/api/tasks").RequireAuthorization();
 
-        // date filter (yyyy-MM-dd), optional mine=true to only return tasks assigned to caller
+        // date filter (yyyy-MM-dd), optional mine=true to only return tasks it's currently
+        // this caller's turn on (for a rotating task, that's just whoever's up this occurrence)
         group.MapGet("/", async (DateOnly date, bool? mine, AppDbContext db, ClaimsPrincipal user) =>
         {
             var tasks = await GetTasksForDate(db, date);
@@ -39,13 +41,13 @@ public static class TaskEndpoints
             if (mine == true)
             {
                 var memberId = GetMemberId(user);
-                tasks = tasks.Where(t => t.AssignedFamilyMemberIds.Contains(memberId)).ToList();
+                tasks = tasks.Where(t => t.ActiveAssigneeIds.Contains(memberId)).ToList();
             }
 
             return Results.Ok(tasks);
         });
 
-        group.MapPost("/", async (CreateHouseholdTaskDto dto, AppDbContext db, ClaimsPrincipal user) =>
+        group.MapPost("/", async (CreateHouseholdTaskDto dto, AppDbContext db, ClaimsPrincipal user, PushNotificationSender pushSender) =>
         {
             if (string.IsNullOrWhiteSpace(dto.Title))
                 return Results.BadRequest("Title is required.");
@@ -58,27 +60,56 @@ public static class TaskEndpoints
                 DueDate = dto.DueDate,
                 DueTime = dto.DueTime,
                 Recurrence = dto.Recurrence,
+                AssignmentMode = dto.AssignmentMode,
                 CreatedByMemberId = GetMemberId(user)
             };
 
-            foreach (var memberId in dto.AssignedFamilyMemberIds.Distinct())
+            var roster = dto.AssignedFamilyMemberIds.Distinct().ToList();
+            var isRotating = dto.AssignmentMode == TaskAssignmentMode.Rotating
+                && dto.Recurrence != RecurrenceType.None
+                && roster.Count > 1;
+
+            for (var i = 0; i < roster.Count; i++)
             {
-                task.Assignments.Add(new TaskAssignment { FamilyMemberId = memberId });
+                task.Assignments.Add(new TaskAssignment
+                {
+                    FamilyMemberId = roster[i],
+                    RosterOrder = i,
+                    // Rotating tasks start with the first person in the roster on duty;
+                    // everyone else stays "in the roster" but isn't on duty yet.
+                    IsActiveTurn = !isRotating || i == 0
+                });
             }
 
             db.Tasks.Add(task);
             await db.SaveChangesAsync();
 
+            // Notify whoever's actually on the hook right now — for a shared task that's
+            // everyone in the roster; for a rotating one, only the person starting it off
+            // (the rest will get their own notification once it's their turn).
+            var notifyIds = isRotating ? new List<int> { roster[0] } : roster;
+            foreach (var memberId in notifyIds)
+            {
+                await pushSender.SendToMemberAsync(
+                    memberId,
+                    "Ny oppgave",
+                    task.Title,
+                    "/my-tasks");
+            }
+
             return Results.Created($"/api/tasks/{task.Id}", task.Id);
         });
 
-        group.MapPost("/{id:int}/complete", async (int id, AppDbContext db, ClaimsPrincipal user) =>
+        group.MapPost("/{id:int}/complete", async (int id, AppDbContext db, ClaimsPrincipal user, PushNotificationSender pushSender) =>
         {
-            var task = await db.Tasks.Include(t => t.Assignments).FirstOrDefaultAsync(t => t.Id == id);
+            var task = await db.Tasks.Include(t => t.Assignments).ThenInclude(a => a.FamilyMember)
+                .FirstOrDefaultAsync(t => t.Id == id);
             if (task is null) return Results.NotFound();
 
             var memberId = GetMemberId(user);
-            var isAssigned = task.Assignments.Any(a => a.FamilyMemberId == memberId);
+            // On a rotating task, only whoever is currently on duty (or an admin) can
+            // complete it — everyone else is "in the roster" for a future turn, not now.
+            var isAssigned = task.Assignments.Any(a => a.FamilyMemberId == memberId && a.IsActiveTurn);
             var isAdmin = user.IsInRole("Admin");
 
             if (!isAssigned && !isAdmin)
@@ -87,6 +118,8 @@ public static class TaskEndpoints
             task.IsCompleted = true;
             task.CompletedAtUtc = DateTime.UtcNow;
             task.CompletedByMemberId = memberId;
+
+            int? notifyNextTurnMemberId = null;
 
             // Recurring task: spin up the next occurrence now, based on this task's
             // original due date (not today) so the cadence doesn't drift if it was
@@ -110,16 +143,48 @@ public static class TaskEndpoints
                     DueDate = nextDueDate,
                     DueTime = task.DueTime,
                     Recurrence = task.Recurrence,
+                    AssignmentMode = task.AssignmentMode,
                     CreatedByMemberId = task.CreatedByMemberId
                 };
+
+                var rosterCount = task.Assignments.Count;
+                var isRotating = task.AssignmentMode == TaskAssignmentMode.Rotating && rosterCount > 1;
+
+                // Whoever was on duty this time tells us where to pick up next time.
+                var currentTurnOrder = task.Assignments.FirstOrDefault(a => a.IsActiveTurn)?.RosterOrder ?? 0;
+                var nextTurnOrder = isRotating ? (currentTurnOrder + 1) % rosterCount : currentTurnOrder;
+
                 foreach (var assignment in task.Assignments)
                 {
-                    nextTask.Assignments.Add(new TaskAssignment { FamilyMemberId = assignment.FamilyMemberId });
+                    var isNextActive = !isRotating || assignment.RosterOrder == nextTurnOrder;
+                    nextTask.Assignments.Add(new TaskAssignment
+                    {
+                        FamilyMemberId = assignment.FamilyMemberId,
+                        RosterOrder = assignment.RosterOrder,
+                        IsActiveTurn = isNextActive
+                    });
+
+                    // Only worth a "it's your turn" notification when the turn actually
+                    // moved to someone new — not for a Shared task where everyone's
+                    // always "active" and this would fire for the whole roster every time.
+                    if (isRotating && isNextActive)
+                    {
+                        notifyNextTurnMemberId = assignment.FamilyMemberId;
+                    }
                 }
                 db.Tasks.Add(nextTask);
             }
 
             await db.SaveChangesAsync();
+
+            if (notifyNextTurnMemberId is not null)
+            {
+                await pushSender.SendToMemberAsync(
+                    notifyNextTurnMemberId.Value,
+                    "Din tur",
+                    task.Title,
+                    "/my-tasks");
+            }
 
             return Results.Ok();
         });
@@ -138,7 +203,9 @@ public static class TaskEndpoints
             return Results.Ok();
         }).RequireAuthorization("AdminOnly");
 
-        // Admin-only: edit an existing task's details and reassign it.
+        // Admin-only: edit an existing task's details and reassign it. Reassigning always
+        // restarts the rotation at roster position 0 — trying to preserve "whose turn is it"
+        // across an arbitrary roster edit isn't something there's a sensible default for.
         group.MapPut("/{id:int}", async (int id, CreateHouseholdTaskDto dto, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(dto.Title))
@@ -153,13 +220,25 @@ public static class TaskEndpoints
             task.DueDate = dto.DueDate;
             task.DueTime = dto.DueTime;
             task.Recurrence = dto.Recurrence;
+            task.AssignmentMode = dto.AssignmentMode;
 
             // Replace the assignment list wholesale rather than trying to diff it.
             db.TaskAssignments.RemoveRange(task.Assignments);
             task.Assignments.Clear();
-            foreach (var memberId in dto.AssignedFamilyMemberIds.Distinct())
+
+            var roster = dto.AssignedFamilyMemberIds.Distinct().ToList();
+            var isRotating = dto.AssignmentMode == TaskAssignmentMode.Rotating
+                && dto.Recurrence != RecurrenceType.None
+                && roster.Count > 1;
+
+            for (var i = 0; i < roster.Count; i++)
             {
-                task.Assignments.Add(new TaskAssignment { FamilyMemberId = memberId });
+                task.Assignments.Add(new TaskAssignment
+                {
+                    FamilyMemberId = roster[i],
+                    RosterOrder = i,
+                    IsActiveTurn = !isRotating || i == 0
+                });
             }
 
             await db.SaveChangesAsync();
@@ -203,10 +282,14 @@ public static class TaskEndpoints
                 IsCompleted = t.IsCompleted,
                 IsOverdue = !t.IsCompleted && t.DueDate < today,
                 Recurrence = t.Recurrence,
+                AssignmentMode = t.AssignmentMode,
                 CompletedAtUtc = t.CompletedAtUtc,
                 CompletedByName = t.CompletedByMember != null ? t.CompletedByMember.Name : null,
-                AssignedFamilyMemberIds = t.Assignments.Select(a => a.FamilyMemberId).ToList(),
-                AssignedFamilyMemberNames = t.Assignments.Select(a => a.FamilyMember.Name).ToList()
+                AssignedFamilyMemberIds = t.Assignments.OrderBy(a => a.RosterOrder).Select(a => a.FamilyMemberId).ToList(),
+                AssignedFamilyMemberNames = t.Assignments.OrderBy(a => a.RosterOrder).Select(a => a.FamilyMember.Name).ToList(),
+                IsRotating = t.AssignmentMode == TaskAssignmentMode.Rotating && t.Assignments.Count > 1,
+                ActiveAssigneeIds = t.Assignments.Where(a => a.IsActiveTurn).Select(a => a.FamilyMemberId).ToList(),
+                ActiveAssigneeNames = t.Assignments.Where(a => a.IsActiveTurn).Select(a => a.FamilyMember.Name).ToList()
             })
             .ToListAsync();
 
@@ -236,10 +319,14 @@ public static class TaskEndpoints
                 IsCompleted = t.IsCompleted,
                 IsOverdue = !t.IsCompleted && t.DueDate < today,
                 Recurrence = t.Recurrence,
+                AssignmentMode = t.AssignmentMode,
                 CompletedAtUtc = t.CompletedAtUtc,
                 CompletedByName = t.CompletedByMember != null ? t.CompletedByMember.Name : null,
-                AssignedFamilyMemberIds = t.Assignments.Select(a => a.FamilyMemberId).ToList(),
-                AssignedFamilyMemberNames = t.Assignments.Select(a => a.FamilyMember.Name).ToList()
+                AssignedFamilyMemberIds = t.Assignments.OrderBy(a => a.RosterOrder).Select(a => a.FamilyMemberId).ToList(),
+                AssignedFamilyMemberNames = t.Assignments.OrderBy(a => a.RosterOrder).Select(a => a.FamilyMember.Name).ToList(),
+                IsRotating = t.AssignmentMode == TaskAssignmentMode.Rotating && t.Assignments.Count > 1,
+                ActiveAssigneeIds = t.Assignments.Where(a => a.IsActiveTurn).Select(a => a.FamilyMemberId).ToList(),
+                ActiveAssigneeNames = t.Assignments.Where(a => a.IsActiveTurn).Select(a => a.FamilyMember.Name).ToList()
             })
             .ToListAsync();
 

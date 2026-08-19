@@ -1,8 +1,48 @@
 @page "/my-tasks"
 @attribute [Authorize]
 @inject HttpClient Http
+@inject NotificationService Notifications
+@implements IAsyncDisposable
 
 <h1>My Tasks</h1>
+
+@if (_foregroundToastTitle is not null)
+{
+    <div class="toast-notification">
+        <div>
+            <strong>@_foregroundToastTitle</strong>
+            @if (!string.IsNullOrWhiteSpace(_foregroundToastBody))
+            {
+                <div>@_foregroundToastBody</div>
+            }
+        </div>
+        <button class="btn-secondary" @onclick="DismissToast">✕</button>
+    </div>
+}
+
+@if (_notificationStatus is PushNotificationStatus.NotRequested)
+{
+    <div class="notify-banner">
+        <span>🔔 Vil du få varsel når du får en ny oppgave, eller når det blir din tur?</span>
+        <button class="btn-primary" @onclick="EnableNotificationsAsync">Aktiver varsler</button>
+    </div>
+}
+else if (_notificationStatus is PushNotificationStatus.IosNeedsInstall)
+{
+    <div class="notify-banner">
+        <span>
+            🔔 For å få varsler på iPhone må du først legge appen til på hjemskjermen:
+            trykk «Del»-knappen i Safari, deretter «Legg til på Hjem-skjerm». Åpne appen
+            derfra for å aktivere varsler.
+        </span>
+    </div>
+}
+else if (_notificationStatus is PushNotificationStatus.Denied)
+{
+    <div class="notify-banner">
+        <span>🔕 Varsler er blokkert for denne enheten. Du kan endre dette i nettleserinnstillingene.</span>
+    </div>
+}
 
 <label for="datePicker">Dato</label>
 <input id="datePicker" type="date" value="@_selectedDate.ToString("yyyy-MM-dd")" @onchange="OnDateChanged" style="max-width:220px;" />
@@ -29,7 +69,16 @@ else
                     {
                         <div class="meta">@task.Description</div>
                     }
-                    <div class="meta">With: @string.Join(", ", task.AssignedFamilyMemberNames)</div>
+                    <div class="meta">
+                        @if (task.IsRotating)
+                        {
+                            <text>Din tur denne runden — rotasjon: @string.Join(" → ", task.AssignedFamilyMemberNames)</text>
+                        }
+                        else
+                        {
+                            <text>Med: @string.Join(", ", task.AssignedFamilyMemberNames)</text>
+                        }
+                    </div>
                     @if (task.DueTime != new TimeOnly(23, 59))
                     {
                         <div class="meta">⏰ Frist: kl. @task.DueTime.ToString("HH:mm")</div>
@@ -109,6 +158,23 @@ else
                 }
             }
 
+            @if (_newTask.Recurrence != RecurrenceType.None && _newTask.AssignedFamilyMemberIds.Count > 1)
+            {
+                <label>Delingsmåte</label>
+                <select @bind="_newTask.AssignmentMode">
+                    <option value="@TaskAssignmentMode.Shared">Alle deler oppgaven (hvem som helst kan gjøre den)</option>
+                    <option value="@TaskAssignmentMode.Rotating">Rundgang (bytter person for hver runde)</option>
+                </select>
+                @if (_newTask.AssignmentMode == TaskAssignmentMode.Rotating)
+                {
+                    <p class="meta">
+                        @string.Join(" → ", _newTask.AssignedFamilyMemberIds
+                            .Select(id => _familyMembers?.FirstOrDefault(m => m.Id == id)?.Name ?? "?"))
+                        — starter med den første, bytter til neste hver gang den fullføres.
+                    </p>
+                }
+            }
+
             <button type="submit" class="btn-primary" style="margin-top:1rem;">Legg til oppgave</button>
         </EditForm>
     </div>
@@ -121,10 +187,60 @@ else
     private CreateHouseholdTaskDto _newTask = new() { DueDate = DateOnly.FromDateTime(DateTime.Now) };
     private bool _showAddTaskForm;
 
+    private PushNotificationStatus? _notificationStatus;
+    private string? _foregroundToastTitle;
+    private string? _foregroundToastBody;
+
     protected override async Task OnInitializedAsync()
     {
         _familyMembers = await Http.GetFromJsonAsync<List<FamilyMemberDto>>("api/family-members");
         await LoadTasksAsync();
+
+        _notificationStatus = await Notifications.GetStatusAsync();
+        if (_notificationStatus == PushNotificationStatus.Granted)
+        {
+            // Already granted on a previous visit — just (re)start listening for
+            // foreground pushes. No need to re-request permission or re-register the
+            // token; the server already has it from last time (tokens are stable unless
+            // the user clears site data or reinstalls).
+            Notifications.ForegroundNotificationReceived += OnForegroundToast;
+            await Notifications.StartListeningForForegroundMessagesAsync();
+        }
+    }
+
+    private async Task EnableNotificationsAsync()
+    {
+        var token = await Notifications.RequestPermissionAndGetTokenAsync();
+        if (token is null)
+        {
+            _notificationStatus = await Notifications.GetStatusAsync();
+            return;
+        }
+
+        await Http.PostAsJsonAsync("api/notifications/register-token", new { Token = token, Platform = "web" });
+
+        _notificationStatus = PushNotificationStatus.Granted;
+        Notifications.ForegroundNotificationReceived += OnForegroundToast;
+        await Notifications.StartListeningForForegroundMessagesAsync();
+    }
+
+    private void OnForegroundToast(string title, string body)
+    {
+        _foregroundToastTitle = title;
+        _foregroundToastBody = body;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void DismissToast()
+    {
+        _foregroundToastTitle = null;
+        _foregroundToastBody = null;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Notifications.ForegroundNotificationReceived -= OnForegroundToast;
+        return ValueTask.CompletedTask;
     }
 
     private async Task LoadTasksAsync()

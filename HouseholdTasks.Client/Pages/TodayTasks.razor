@@ -31,9 +31,17 @@ else
                         <div class="meta">@task.Description</div>
                     }
                     <div class="meta">
-                        Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
-                            ? string.Join(", ", task.AssignedFamilyMemberNames)
-                            : "Ikke tildelt")
+                        @if (task.IsRotating)
+                        {
+                            <text>Ansvarlig: @string.Join(", ", task.ActiveAssigneeNames)</text>
+                            <span style="margin-left:0.5rem;">🔁 rundgang: @string.Join(" → ", task.AssignedFamilyMemberNames)</span>
+                        }
+                        else
+                        {
+                            <text>Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                                ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                : "Ikke tildelt")</text>
+                        }
                     </div>
                     @if (!task.IsOverdue && task.DueTime != new TimeOnly(23, 59))
                     {
@@ -87,9 +95,17 @@ else
                             <div class="meta">@task.Description</div>
                         }
                         <div class="meta">
-                            Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
-                                ? string.Join(", ", task.AssignedFamilyMemberNames)
-                                : "Ikke tildelt")
+                            @if (task.IsRotating)
+                            {
+                                <text>Ansvarlig: @string.Join(", ", task.ActiveAssigneeNames)</text>
+                                <span style="margin-left:0.5rem;">🔁 rundgang: @string.Join(" → ", task.AssignedFamilyMemberNames)</span>
+                            }
+                            else
+                            {
+                                <text>Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                                    ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                    : "Ikke tildelt")</text>
+                            }
                         </div>
                         @if (task.DueTime != new TimeOnly(23, 59))
                         {

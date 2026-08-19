@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<FamilyMember> FamilyMembers => Set<FamilyMember>();
     public DbSet<HouseholdTask> Tasks => Set<HouseholdTask>();
     public DbSet<TaskAssignment> TaskAssignments => Set<TaskAssignment>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,5 +35,15 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(t => t.CompletedByMemberId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<DeviceToken>()
+            .HasIndex(d => d.Token)
+            .IsUnique();
+
+        modelBuilder.Entity<DeviceToken>()
+            .HasOne(d => d.FamilyMember)
+            .WithMany()
+            .HasForeignKey(d => d.FamilyMemberId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

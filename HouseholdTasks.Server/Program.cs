@@ -1,12 +1,14 @@
 using HouseholdTasks.Server.Auth;
 using HouseholdTasks.Server.Data;
 using HouseholdTasks.Server.Endpoints;
+using HouseholdTasks.Server.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
+using Google.Apis.Auth.OAuth2;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -120,6 +122,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddScoped<IClaimsTransformation, FamilyMemberClaimsTransformer>();
+builder.Services.AddScoped<PushNotificationSender>();
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -135,11 +138,49 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
-// ---- Ensure DB exists ----
+// ---- Firebase Admin (push notifications) — entirely optional ----
+// If no service account is configured, FirebaseApp.DefaultInstance stays null and
+// PushNotificationSender silently no-ops on every send rather than the app failing to
+// start. Two ways to provide the credential, same pattern as the Google OAuth secrets:
+// a raw JSON string (HA add-on option / user-secret) or a path to a mounted file.
+//var firebaseServiceAccountJson = app.Configuration["Firebase"];
+var firebaseServiceAccountPath =
+    app.Configuration["firebase_service_account_path"] ?? app.Configuration["Firebase:ServiceAccountPath"];
+
+var firebaseSection = app.Configuration.GetSection("Firebase");
+if (firebaseSection.Exists())
+{
+    // Convert the section back to a JSON string dynamically
+    var jsonString = System.Text.Json.JsonSerializer.Serialize(firebaseSection.GetChildren().ToDictionary(x => x.Key, x => x.Value));
+
+    FirebaseAdmin.FirebaseApp.Create(new FirebaseAdmin.AppOptions
+    {
+        Credential = GoogleCredential.FromJson(jsonString)
+    });
+}
+else if (!string.IsNullOrWhiteSpace(firebaseServiceAccountPath) && File.Exists(firebaseServiceAccountPath))
+{
+    FirebaseAdmin.FirebaseApp.Create(new FirebaseAdmin.AppOptions
+    {
+        Credential = GoogleCredential.FromFile(firebaseServiceAccountPath)
+    });
+    app.Logger.LogInformation("Firebase Admin initialized from {Path}.", firebaseServiceAccountPath);
+}
+else
+{
+    app.Logger.LogWarning(
+        "No Firebase service account configured — push notifications are disabled. " +
+        "Set firebase_service_account_json (or _path) to enable them.");
+}
+
+// ---- Ensure DB exists, then bring existing databases up to date ----
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SchemaMigrator");
+    await HouseholdTasks.Server.Data.SchemaMigrator.RunAsync(db, logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -175,6 +216,7 @@ app.UseAuthorization();
 app.MapAccountEndpoints();
 app.MapFamilyEndpoints();
 app.MapTaskEndpoints();
+app.MapNotificationEndpoints();
 
 app.MapGet("/Error", (HttpContext ctx) =>
 {

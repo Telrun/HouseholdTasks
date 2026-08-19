@@ -4,54 +4,130 @@
 @inject HttpClient Http
 @implements IDisposable
 
-<style>
-    html, body { margin: 0; padding: 0; background: #111; }
-</style>
+<h2>Dagens gjøremål — @DateTime.Now.ToString("dddd, MMMM d")</h2>
 
-<div class="kiosk">
-    <div class="kiosk-header">
-        <span class="kiosk-date">@DateTime.Now.ToString("dddd d. MMMM")</span>
-        @if (_tasks is not null)
+@if (_tasks is null)
+{
+    <p>Laster…</p>
+}
+else if (_tasks.Count == 0)
+{
+    <p>Ingenting på agendaen i dag. 🎉</p>
+}
+else
+{
+    <div class="today-board">
+        @foreach (var task in _tasks)
         {
-            <span class="kiosk-count">@_remainingCount gjenstår</span>
+            <div class="task-card @(task.IsCompleted ? "completed" : "") @(task.IsOverdue ? "overdue" : "")">
+                <div>
+                    <span class="category-pill">@task.Category</span>
+                    @if (task.IsOverdue)
+                    {
+                        <span class="overdue-label">IKKE GJORT — skulle vært utført innen @task.DueDate.ToString("MMM d") kl. @task.DueTime.ToString("HH:mm")</span>
+                    }
+                    <div class="title">@task.Title</div>
+                    @if (!string.IsNullOrWhiteSpace(task.Description))
+                    {
+                        <div class="meta">@task.Description</div>
+                    }
+                    <div class="meta">
+                        @if (task.IsRotating)
+                        {
+                            <text>Ansvarlig: @string.Join(", ", task.ActiveAssigneeNames)</text>
+                            <span style="margin-left:0.5rem;">🔁 rundgang: @string.Join(" → ", task.AssignedFamilyMemberNames)</span>
+                        }
+                        else
+                        {
+                            <text>
+                                Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                                                                ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                                                : "Ikke tildelt")
+                            </text>
+                        }
+                    </div>
+                    @if (!task.IsOverdue && task.DueTime != new TimeOnly(23, 59))
+                    {
+                        <div class="meta">⏰ Frist: kl. @task.DueTime.ToString("HH:mm")</div>
+                    }
+                </div>
+                <div>
+                    @if (task.IsCompleted)
+                    {
+                        <span>✅ Utført@(task.CompletedByName is not null ? $" ({task.CompletedByName})" : "")</span>
+                    }
+                    else
+                    {
+                        <span>⬜ Venter</span>
+                    }
+                </div>
+            </div>
         }
     </div>
+}
 
-    @if (_tasks is null)
-    {
-        <p class="kiosk-empty">Laster…</p>
-    }
-    else if (_tasks.Count == 0)
-    {
-        <p class="kiosk-empty">Ingenting i dag 🎉</p>
-    }
-    else
-    {
-        <div class="kiosk-list">
-            @foreach (var task in _tasks)
+<p class="meta" style="margin-top:2rem;">Oppdateres hvert 60. sekund.</p>
+
+<hr style="margin:1.5rem 0;" />
+
+<button class="btn-secondary" @onclick="ToggleTomorrow">
+    @(_showTomorrow ? "▾" : "▸") Vis morgendagens oppgaver
+</button>
+
+@if (_showTomorrow)
+{
+    <div style="margin-top:1rem;">
+        @if (_tomorrowTasks is null)
+        {
+            <p>Laster…</p>
+        }
+        else if (_tomorrowTasks.Count == 0)
+        {
+            <p>Ingenting planlagt i morgen ennå.</p>
+        }
+        else
+        {
+            @foreach (var task in _tomorrowTasks)
             {
-                <div class="kiosk-row @(task.IsCompleted ? "kiosk-completed" : "") @(task.IsOverdue ? "kiosk-overdue" : "")">
-                    <span class="kiosk-status">@(task.IsCompleted ? "✅" : task.IsOverdue ? "⚠️" : "⬜")</span>
-                    <span class="kiosk-title">@task.Title</span>
-                    @if (task.DueTime != new TimeOnly(23, 59))
-                    {
-                        <span class="kiosk-time">@task.DueTime.ToString("HH:mm")</span>
-                    }
-                    <span class="kiosk-who">
-                        @(task.AssignedFamilyMemberNames.Count > 0
-                            ? string.Join(", ", task.AssignedFamilyMemberNames)
-                            : "—")
-                    </span>
+                <div class="task-card">
+                    <div>
+                        <span class="category-pill">@task.Category</span>
+                        <div class="title">@task.Title</div>
+                        @if (!string.IsNullOrWhiteSpace(task.Description))
+                        {
+                            <div class="meta">@task.Description</div>
+                        }
+                        <div class="meta">
+                            @if (task.IsRotating)
+                            {
+                                <text>Ansvarlig: @string.Join(", ", task.ActiveAssigneeNames)</text>
+                                <span style="margin-left:0.5rem;">🔁 rundgang: @string.Join(" → ", task.AssignedFamilyMemberNames)</span>
+                            }
+                            else
+                            {
+                                <text>
+                                    Assigned to: @(task.AssignedFamilyMemberNames.Count > 0
+                                                                        ? string.Join(", ", task.AssignedFamilyMemberNames)
+                                                                        : "Ikke tildelt")
+                                </text>
+                            }
+                        </div>
+                        @if (task.DueTime != new TimeOnly(23, 59))
+                        {
+                            <div class="meta">⏰ Frist: kl. @task.DueTime.ToString("HH:mm")</div>
+                        }
+                    </div>
                 </div>
             }
-        </div>
-    }
-</div>
+        }
+    </div>
+}
 
 @code {
     private List<HouseholdTaskDto>? _tasks;
+    private List<HouseholdTaskDto>? _tomorrowTasks;
+    private bool _showTomorrow;
     private Timer? _timer;
-    private int _remainingCount => _tasks?.Count(t => !t.IsCompleted) ?? 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -69,6 +145,16 @@
         catch
         {
             // keep showing the last successfully loaded data on transient failure
+        }
+    }
+
+    private async Task ToggleTomorrow()
+    {
+        _showTomorrow = !_showTomorrow;
+        if (_showTomorrow && _tomorrowTasks is null)
+        {
+            var tomorrow = DateOnly.FromDateTime(DateTime.Now.AddDays(1));
+            _tomorrowTasks = await Http.GetFromJsonAsync<List<HouseholdTaskDto>>($"api/tasks/date/{tomorrow:yyyy-MM-dd}");
         }
     }
 

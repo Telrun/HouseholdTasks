@@ -37,6 +37,17 @@ three projects:
   description, category, due date/time, recurrence, or assignees, reset a task that was
   marked done incorrectly, or delete a task. Also lists all family members with the same
   kind of inline edit for name and admin status.
+- **Shared or rotating assignment** — a recurring task with 2+ assignees can either stay
+  Shared (anyone assigned can complete it, as before) or switch to Rotating: one person is
+  "on duty" per occurrence, and the turn passes to the next person in the roster each time
+  it's completed, wrapping back to the first once everyone's had a turn. Only whoever's
+  currently on duty (or an admin) can mark a rotating task done.
+- **Push notifications (PWA + Firebase Cloud Messaging)** — the app is installable as a
+  Progressive Web App and can send a push notification when someone gets a new task, or
+  when a rotating task's turn passes to them. Requires your own Firebase project — see
+  "Setting up push notifications" below. **iOS note:** Apple only allows web push for a
+  PWA that's been added to the Home Screen; it will never work in a plain Safari tab, on
+  any iOS browser, full stop.
 - **Mobile-friendly** — responsive layout with a hamburger menu below ~768px width;
   no Bootstrap, just hand-rolled CSS to match the rest of the app.
 
@@ -105,6 +116,53 @@ there's no self-service signup. Anyone in `InitialAdminEmails` is the one except
 FamilyMember row (as an admin) is created automatically the first time they log in, since
 that's the only way to get the very first admin into an otherwise-empty database.
 
+### 5. Setting up push notifications (optional)
+
+Skip this section entirely and the app works fine without it — `PushNotificationSender`
+silently no-ops if Firebase isn't configured, so nothing breaks. If you want the "new
+task" / "it's your turn" notifications, though, here's what's needed. **Every step below
+happens in your own Google/Firebase account — none of it can be done from this repo.**
+
+1. Go to the [Firebase Console](https://console.firebase.google.com/) and create a
+   project (or use an existing Google Cloud project).
+2. Add a **Web app** to the project (Project Settings → General → Your apps → Add app →
+   Web). Firebase will show you a `firebaseConfig` object with `apiKey`, `authDomain`,
+   `projectId`, `storageBucket`, `messagingSenderId`, and `appId`.
+3. Copy those six values into **both**
+   `HouseholdTasks.Client/wwwroot/js/notifications.js` and
+   `HouseholdTasks.Client/wwwroot/firebase-messaging-sw.js` — search for `REPLACE_ME` in
+   each file. They have to match exactly in both places (the service worker runs in its
+   own context and can't share the page's config). These values aren't secret — they
+   identify your project, not a credential — so it's fine for them to sit in plain
+   client-side files.
+4. In the same project: **Project Settings → Cloud Messaging → Web configuration → Web
+   Push certificates → Generate key pair**. Copy the resulting key into the `vapidKey`
+   constant near the top of `notifications.js` (also `REPLACE_ME`).
+5. For server-side sending: **Project Settings → Service accounts → Generate new private
+   key**. This downloads a JSON file — **never commit it to source control.** Paste its
+   full contents into either:
+   - `dotnet user-secrets set "Firebase:ServiceAccountJson" "<paste the whole JSON here>"`
+     in `HouseholdTasks.Server`, for local dev, or
+   - the `firebase_service_account_json` option on the Home Assistant add-on config page,
+     for the deployed version (already wired up in `config.yaml` — the option is optional
+     and left blank by default).
+6. Rebuild and redeploy. Sign in on **My Tasks**, tap "Aktiver varsler", and you should get
+   a real browser permission prompt. Create a task assigned to yourself from another
+   account (or ask a family member to) and confirm a notification arrives.
+
+**About the icons**: `HouseholdTasks.Client/wwwroot/icons/icon-192.png` and `icon-512.png`
+are simple placeholders (a plain house shape on the app's brand green) generated just so
+the PWA is installable out of the box — swap them for a real logo whenever you like, same
+filenames and sizes (192×192, 512×512).
+
+**iOS is a hard platform limitation, not a bug**: web push only works for a PWA that's
+been added to the Home Screen via Safari's Share → "Add to Home Screen" — never in a
+regular browser tab, on any iOS browser (they're all WebKit under the hood, Apple's
+choice, not Google's or ours). The "Aktiver varsler" banner detects this and shows install
+instructions instead of a broken permission prompt when it can tell it's needed. Android
+and desktop have no such restriction — notifications work directly in the browser there,
+installed or not.
+
 ## Running
 
 The solution uses the `.slnx` XML solution format (the .NET 10 default). Requires Visual
@@ -123,11 +181,17 @@ dotnet run
 
 The SQLite database file (`household.db`) is created automatically next to the Server
 project on first run (via `EnsureCreated()` — no manual migration step needed for a fresh
-install). **If you already had a database from before recurrence or due-time support was
-added**, delete `household.db` (and its `-shm`/`-wal` files if present) so it gets
-recreated with the newer `Recurrence`/`DueTime` columns — `EnsureCreated()` only creates
-the schema once and won't alter an existing database, so an old file will throw a SQL
-error on the missing columns.
+install). **Existing databases upgrade themselves automatically on startup** — see
+`HouseholdTasks.Server/Data/SchemaMigrator.cs`, a small self-healing step that runs right
+after `EnsureCreated()`: it checks (via `PRAGMA table_info` / `sqlite_master`) whether each
+column or table added since the initial schema already exists, and if not, adds it and
+backfills existing rows with a sensible default, all without touching your existing tasks
+or family members. Currently covers `Tasks.Recurrence`, `Tasks.DueTime`,
+`Tasks.AssignmentMode`, `TaskAssignments.RosterOrder`, `TaskAssignments.IsActiveTurn`, and
+the whole `DeviceTokens` table. You'll see log lines like `Added Tasks.DueTime column and
+backfilled 12 existing task(s) to 23:59.` the first time it runs after an update; on every
+run after that it's a no-op. You no longer need to delete `household.db` when pulling in
+schema changes from this repo.
 
 ## Notes & things you'll likely want to extend
 
@@ -136,12 +200,26 @@ error on the missing columns.
   (or an iframe in a manual dashboard) pointing at `https://<your-domain>/kiosk`. On a
   7" panel you'll likely want to hide the HA header/sidebar around it too (kiosk-mode
   card or a dedicated dashboard) so it's the only thing on screen.
-
 - **The living-room "Today" screen** is a public, read-only, unauthenticated page by
   design (per the requirements) — don't put anything on it you wouldn't want visible to
   anyone with a browser on that URL.
-- Switch `EnsureCreated()` to proper EF Core migrations (`dotnet ef migrations add Initial`)
-  once you start evolving the schema, so existing data survives model changes (and future
-  additions like this one don't need a "delete the database" workaround).
+- **Notification triggers are deliberately minimal right now**: a push fires when a task
+  is created (to whoever's assigned — just the first person, for a rotating task) and when
+  a rotating task's turn passes to someone new on completion. There's no overdue reminder
+  job yet — a natural next step would be a small hosted background service that
+  periodically scans for overdue tasks and notifies whoever's on duty, but that's not
+  built. There's also no per-person notification preferences (mute a category, quiet
+  hours, etc.) — everyone who enables notifications gets both trigger types.
+- **Device tokens aren't cleaned up when someone signs out** — `DELETE
+  /api/notifications/register-token` exists for that but nothing calls it yet. In
+  practice this self-corrects: `PushNotificationSender` prunes any token FCM reports as
+  no-longer-valid the next time it tries to send to it.
+- `SchemaMigrator.cs` is a stopgap, not a real migrations system — it only knows how to
+  additively check-and-add specific named columns/tables, one at a time, by hand. It's
+  fine for a personal project with occasional small changes, but doesn't handle renames,
+  drops, or anything structural. If the schema keeps evolving, switching to real EF Core
+  migrations (`dotnet ef migrations add ...`) is the more durable long-term move —
+  `SchemaMigrator` was written as a bridge to avoid that setup for now, not a permanent
+  replacement for it.
 - The cookie auth is `SameSite=Lax`, which works for same-origin hosting (this template)
   but would need adjusting if you ever split client and server onto different domains.
